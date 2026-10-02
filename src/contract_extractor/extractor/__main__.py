@@ -91,8 +91,8 @@ def main() -> None:
         fail(f"Anthropic API error: {e.message}")
 
     if response.stop_reason == "end_turn":
-        print("done")
-        print(response.usage)
+        print("done", file=sys.stderr)
+    print(response.usage, file=sys.stderr)
 
     if response.parsed_output is None:
         raise SystemExit(f"No structured output (stop_reason={response.stop_reason})")

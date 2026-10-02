@@ -1,8 +1,9 @@
 import json
 from dotenv import load_dotenv
 import anthropic
+from pydantic import ValidationError
 
-from .models import ContractSummary, ValidationError
+from .models import ContractSummary
 
 load_dotenv()
 

@@ -1,0 +1,11 @@
+{
+  "parties": [
+    "LARKSPUR CONSULTING LLC",
+    "MERIDIAN HEALTH PARTNERS, INC."
+  ],
+  "effective_date": "2026-01-15",
+  "term_months": 24,
+  "termination_notice_days": 30,
+  "governing_law": null,
+  "liability_cap": "Total fees paid or payable under that SOW"
+}

@@ -1,7 +1,8 @@
+import json
 from dotenv import load_dotenv
 import anthropic
-import json
-from models import ContractSummary
+
+from .models import ContractSummary, ValidationError
 
 load_dotenv()
 
@@ -35,6 +36,13 @@ response = client.messages.create(
 for block in response.content:
     if block.type == "text":
         print(block.text)
-        ContractSummary.model_validate_json(block.text)
-        
+        try:
+            validated_model = ContractSummary.model_validate_json(block.text)
+            print("Validated Model:", validated_model)
+        except ValidationError as e:
+            print("Validation failed!")
+            print("Raw reply:", block.text)
+            print("Error details:", e)
+
+
 

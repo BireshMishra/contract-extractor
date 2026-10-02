@@ -1,0 +1,34 @@
+SOFTWARE SUBSCRIPTION AGREEMENT
+
+This Software Subscription Agreement (the "Agreement") is made on 1 April 2025 (the "Effective Date") between:
+
+(1) NORTHWIND ANALYTICS LTD, a company incorporated in England and Wales with company number 08123456, whose registered office is at 14 Tanner Street, London SE1 3LE ("Supplier"); and
+
+(2) BRIGHTFIELD RETAIL PLC, a company incorporated in England and Wales with company number 04987654, whose registered office is at 220 Deansgate, Manchester M3 4LQ ("Customer").
+
+1. SERVICES
+1.1 Supplier shall provide Customer with access to its hosted retail demand-forecasting platform (the "Platform") for up to 250 named users.
+1.2 Supplier shall use commercially reasonable efforts to make the Platform available 99.5% of the time in each calendar month, excluding scheduled maintenance.
+
+2. FEES
+2.1 Customer shall pay an annual subscription fee of GBP 180,000, invoiced annually in advance.
+2.2 Invoices are payable within thirty (30) days of receipt.
+
+3. TERM AND TERMINATION
+3.1 This Agreement commences on the Effective Date and continues for an initial term of twenty-four (24) months (the "Initial Term").
+3.2 Either party may terminate this Agreement for convenience by giving the other party not less than ninety (90) days' written notice, such notice not to expire before the end of the Initial Term.
+3.3 Either party may terminate immediately on written notice if the other party commits a material breach which is not remedied within thirty (30) days of being notified of the breach.
+
+4. DATA PROTECTION
+4.1 Each party shall comply with the UK GDPR and the Data Protection Act 2018 in relation to any personal data processed under this Agreement.
+
+5. LIMITATION OF LIABILITY
+5.1 Nothing in this Agreement limits liability for death or personal injury caused by negligence, or for fraud.
+5.2 Subject to clause 5.1, each party's total aggregate liability arising under or in connection with this Agreement shall not exceed the total fees paid by Customer in the twelve (12) months preceding the event giving rise to the claim.
+
+6. GOVERNING LAW AND JURISDICTION
+6.1 This Agreement and any dispute arising out of it shall be governed by the laws of England and Wales.
+6.2 The courts of England and Wales shall have exclusive jurisdiction.
+
+Signed for and on behalf of NORTHWIND ANALYTICS LTD: Priya Raman, Chief Executive Officer
+Signed for and on behalf of BRIGHTFIELD RETAIL PLC: Tom Achebe, Chief Operating Officer

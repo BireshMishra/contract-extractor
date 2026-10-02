@@ -1,0 +1,25 @@
+AMENDMENT No. 1 TO SOFTWARE SUBSCRIPTION AGREEMENT
+
+From: Northwind Analytics Ltd
+To: Brightfield Retail plc
+
+Date: 1 October 2025
+
+Re: Software Subscription Agreement dated 1 April 2025 (the "Agreement")
+
+Dear Tom,
+
+Further to our recent discussions, Northwind Analytics Ltd and Brightfield Retail plc agree to amend the Agreement as follows, with effect from the date of this letter:
+
+1. Clause 3.2 of the Agreement is deleted and replaced with: "Either party may terminate this Agreement for convenience by giving the other party not less than sixty (60) days' written notice."
+
+2. The number of named users in clause 1.1 is increased from 250 to 400. The annual subscription fee is increased accordingly to GBP 245,000 from the next renewal invoice.
+
+Except as set out in this letter, the Agreement continues in full force and effect.
+
+Please sign below to confirm Brightfield Retail plc's agreement.
+
+Yours sincerely,
+Priya Raman, Chief Executive Officer, Northwind Analytics Ltd
+
+Agreed and accepted: Tom Achebe, Chief Operating Officer, Brightfield Retail plc

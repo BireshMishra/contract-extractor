@@ -1,0 +1,33 @@
+MUTUAL NON-DISCLOSURE AGREEMENT
+
+Dated: 3 March 2026
+
+Parties:
+ORION BIOSYSTEMS GMBH, Leopoldstrasse 88, 80802 Munich, Germany ("Orion"), a subsidiary of Orion BioSystems Holdings, Inc., a Delaware corporation; and
+TESSELLATE SOFTWARE PRIVATE LIMITED, Outer Ring Road, Bengaluru 560103, India ("Tessellate").
+
+Each a "Party" and together the "Parties".
+
+Background
+The Parties wish to evaluate a possible collaboration on laboratory data software (the "Purpose") and will share confidential information for that Purpose.
+
+1. Confidential Information
+"Confidential Information" means all non-public information disclosed by one Party to the other in connection with the Purpose, whether oral, written or electronic.
+
+2. Obligations
+The receiving Party shall (a) use Confidential Information only for the Purpose, (b) not disclose it to any third party except its employees and advisers who need to know it, and (c) protect it with at least reasonable care.
+
+3. Exclusions
+Obligations under clause 2 do not apply to information that is public, already known to the receiving Party, independently developed, or lawfully received from a third party.
+
+4. Term
+This Agreement takes effect on the date above and remains in force for three (3) years. Either Party may terminate it earlier by giving sixty (60) days' written notice. Obligations regarding Confidential Information disclosed before termination survive for five (5) years.
+
+5. No Licence
+No licence under any patent, copyright or other intellectual property right is granted by this Agreement.
+
+6. Applicable Law
+This Agreement is governed by the laws of the Federal Republic of Germany. The courts of Munich shall have exclusive jurisdiction.
+
+For Orion: Dr. Katrin Vogel, Managing Director
+For Tessellate: Arjun Mehta, Chief Technology Officer

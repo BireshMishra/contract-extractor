@@ -1,0 +1,37 @@
+MASTER CONSULTING SERVICES AGREEMENT
+
+THIS MASTER CONSULTING SERVICES AGREEMENT is entered into as of the fifteenth day of January, 2026, by and between LARKSPUR CONSULTING LLC, a limited liability company with offices at 400 Congress Avenue, Austin, Texas ("Consultant"), and MERIDIAN HEALTH PARTNERS, INC., with offices at 1200 Peachtree Street, Atlanta, Georgia ("Client").
+
+RECITALS
+Client wishes to engage Consultant to provide data platform modernisation services, and Consultant wishes to provide such services, on the terms set out below.
+
+1. STATEMENTS OF WORK
+Services will be described in one or more Statements of Work ("SOW") signed by both parties. Each SOW forms part of this Agreement.
+
+2. FEES AND EXPENSES
+Client shall pay the fees set out in each SOW. Pre-approved travel expenses will be reimbursed at cost.
+
+3. TERM
+This Agreement shall remain in force for a period of two (2) years from the date first written above, unless terminated earlier in accordance with Section 4.
+
+4. TERMINATION
+4.1 Either party may terminate this Agreement or any SOW upon thirty (30) days' prior written notice to the other party.
+4.2 On termination, Client shall pay for all services performed up to the date of termination.
+
+5. CONFIDENTIALITY
+Each party shall keep the other party's Confidential Information confidential and use it only for the purposes of this Agreement. This obligation survives for three (3) years after termination.
+
+6. PROTECTED HEALTH INFORMATION
+Consultant shall not access protected health information unless the parties have first executed a Business Associate Agreement.
+
+7. LIMITATION OF LIABILITY
+IN NO EVENT SHALL EITHER PARTY BE LIABLE FOR ANY INDIRECT OR CONSEQUENTIAL DAMAGES. EACH PARTY'S TOTAL LIABILITY UNDER ANY SOW SHALL NOT EXCEED THE TOTAL FEES PAID OR PAYABLE UNDER THAT SOW.
+
+8. GENERAL
+8.1 This Agreement shall be interpreted in accordance with the plain meaning of its terms and not strictly for or against either party.
+8.2 This Agreement, together with all SOWs, is the entire agreement between the parties.
+8.3 Notices must be in writing and sent to the addresses above.
+
+IN WITNESS WHEREOF the parties have executed this Agreement.
+LARKSPUR CONSULTING LLC  By: Dana Whitfield, Managing Partner
+MERIDIAN HEALTH PARTNERS, INC.  By: Luis Ortega, Chief Information Officer

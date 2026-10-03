@@ -23,12 +23,12 @@ def fail(message: str) -> NoReturn:
 
 
 def read_contract(path: Path) -> str:
+    if path.is_dir():
+        fail(f"contract path is a directory, not a file: {path}")
     try:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         fail(f"contract file not found: {path}")
-    except IsADirectoryError:
-        fail(f"contract path is a directory, not a file: {path}")
     except PermissionError:
         fail(f"permission denied reading contract file: {path}")
     except UnicodeDecodeError:
@@ -95,12 +95,10 @@ def main() -> None:
     except anthropic.APIError as e:
         fail(f"Anthropic API error: {e.message}")
 
-    if response.stop_reason == "end_turn":
-        print("done", file=sys.stderr)
     print(response.usage, file=sys.stderr)
-
     if response.stop_reason != "end_turn":
         fail(f"no complete structured output (stop_reason={response.stop_reason})")
+    print("done", file=sys.stderr)
 
     text = "".join(block.text for block in response.content if block.type == "text")
     try:

@@ -77,8 +77,7 @@ def test_sample_contract_matches_expected(run, name):
 
     assert code == 0
     assert json.loads(out) == EXPECTED[name]
-    assert err.splitlines()[0] == "done"
-    assert "Usage(" in err
+    assert err.splitlines() == [client.reply.usage, "done"]
 
 
 def test_stdout_is_pure_json(run):
@@ -130,6 +129,15 @@ def test_missing_file(run):
 
     assert code == 1
     assert "not found" in err
+    assert client.requests == []
+
+
+def test_directory_path(run, tmp_path):
+    client = FakeClient()
+    _, code, _, err = run(tmp_path, client)
+
+    assert code == 1
+    assert "is a directory" in err
     assert client.requests == []
 
 

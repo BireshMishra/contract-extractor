@@ -9,13 +9,12 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "anthropic>=1.11.0",
-    "openai>=3.22.1",
     "pydantic>=2.13.5",
     "python-dotenv>=1.2.4",
 ]
 
 [project.scripts]
-contract-extractor = "contract_extractor:main"
+contract-extractor = "contract_extractor.extractor.__main__:main"
 
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13.0"]
@@ -24,4 +23,10 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "live: calls the real Anthropic API (opt in with --live; costs a few cents)",
 ]

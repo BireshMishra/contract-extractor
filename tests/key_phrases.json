@@ -1,0 +1,22 @@
+{
+  "sample1_saas_subscription.txt": {
+    "governing_law": ["England and Wales"],
+    "liability_cap": ["fees paid", "month"]
+  },
+  "sample2_consulting_msa.txt": {
+    "governing_law": [],
+    "liability_cap": ["fees paid or payable", "SOW"]
+  },
+  "sample3_mutual_nda.txt": {
+    "governing_law": ["Germany"],
+    "liability_cap": []
+  },
+  "sample4_supply_agreement.txt": {
+    "governing_law": ["New York"],
+    "liability_cap": ["2,000,000"]
+  },
+  "sample5_amendment_letter.txt": {
+    "governing_law": [],
+    "liability_cap": []
+  }
+}

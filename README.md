@@ -48,3 +48,14 @@ The live eval ([tests/test_live.py](tests/test_live.py)) sends the 5 sample cont
 - The answer key ([expected.json](tests/expected.json)) was hand-written by the author, with no independent review. Some entries are judgment calls, such as using the last signature date as the effective date.
 - Five short contracts is a smoke test, not a benchmark. There is no measurement of variance across runs or of performance on long or messy documents.
 - Input is plain UTF-8 text only. There is no PDF or DOCX parsing and no chunking, so a very long contract goes into a single request.
+
+## Output modes and failure-rate comparison
+
+`--mode json` (default) asks for schema-constrained JSON; `--mode tool` forces a call to a
+`record_summary` tool whose `input_schema` is the `ContractSummary` JSON schema. In both
+modes, invalid output is sent back (the bad output plus the validation error) for up to 2
+retries, then the run fails with a clear error.
+
+`python -m contract_extractor.extractor.compare --runs 5 --out evidence/mode_comparison.txt`
+runs every sample through both modes and reports how many runs needed a retry or failed
+outright. It makes real, paid API calls; no results are recorded yet.

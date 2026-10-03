@@ -15,8 +15,17 @@ PACKAGE_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = PACKAGE_DIR.parent.parent
 DEFAULT_CONTRACT = PACKAGE_DIR / "contracts" / "sample1_saas_subscription.txt"
 MODEL = "claude-sonnet-5-5"
+MAX_RETRIES = 2
+MODES = ("json", "tool")
+TOOL_NAME = "record_summary"
 
 
+class ExtractionError(Exception):
+    """The extraction could not be completed; the message is safe to show the user."""
+
+
+class SchemaError(ExtractionError):
+    """The model kept returning output that does not match ContractSummary."""
 
 
 def fail(message: str) -> NoReturn:
@@ -42,6 +51,143 @@ def read_contract(path: Path) -> str:
     return text
 
 
+def request_options(mode: str) -> dict:
+    """Mode-specific arguments: a JSON-schema output format, or a single forced tool."""
+    if mode == "tool":
+        tool = {
+            "name": TOOL_NAME,
+            "description": "Record the structured summary extracted from the contract.",
+            "input_schema": ContractSummary.model_json_schema(),
+        }
+        return {
+            "tools": [tool],
+            "tool_choice": {"type": "tool", "name": TOOL_NAME},
+            "output_config": {"effort": "low"},
+        }
+    return {
+        "output_config": {
+            "effort": "low",
+            "format": {
+                "type": "json_schema",
+                "schema": anthropic.transform_schema(ContractSummary),
+            },
+        }
+    }
+
+
+def send(client, messages: list[dict], mode: str):
+    try:
+        return client.messages.create(
+            model=MODEL,
+            max_tokens=4000,
+            system=SYSTEM_PROMPT,
+            messages=messages,
+            **request_options(mode),
+        )
+    except anthropic.AuthenticationError:
+        raise ExtractionError(
+            "invalid API key (authentication failed); check ANTHROPIC_API_KEY"
+        )
+    except anthropic.PermissionDeniedError:
+        raise ExtractionError("API key does not have permission for this request")
+    except anthropic.RateLimitError:
+        raise ExtractionError("rate limit exceeded; wait a moment and try again")
+    except anthropic.APITimeoutError:
+        raise ExtractionError("request to the Anthropic API timed out")
+    except anthropic.APIConnectionError:
+        raise ExtractionError(
+            "could not connect to the Anthropic API; check your network connection"
+        )
+    except anthropic.APIStatusError as e:
+        raise ExtractionError(f"Anthropic API returned HTTP {e.status_code}: {e.message}")
+    except anthropic.APIError as e:
+        raise ExtractionError(f"Anthropic API error: {e.message}")
+
+
+def parse_reply(response, mode: str) -> ContractSummary:
+    """Validate the reply; raises ValidationError on bad output."""
+    if mode == "tool":
+        block = next((b for b in response.content if b.type == "tool_use"), None)
+        if block is None:
+            raise ExtractionError("model did not call the extraction tool")
+        return ContractSummary.model_validate(block.input)
+    text = "".join(b.text for b in response.content if b.type == "text")
+    return ContractSummary.model_validate_json(text)
+
+
+def retry_turn(response, mode: str, error: ValidationError) -> list[dict]:
+    """Messages that show the model its bad output and the validation error."""
+    problem = f"That output failed schema validation:\n{error}\nFix it and try again."
+    if mode == "tool":
+        block = next(b for b in response.content if b.type == "tool_use")
+        return [
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": block.id,
+                        "name": block.name,
+                        "input": block.input,
+                    }
+                ],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "is_error": True,
+                        "content": problem,
+                    }
+                ],
+            },
+        ]
+    text = "".join(b.text for b in response.content if b.type == "text")
+    return [
+        {"role": "assistant", "content": text},
+        {"role": "user", "content": problem},
+    ]
+
+
+def extract(
+    client, contract: str, mode: str = "json", verbose: bool = False
+) -> tuple[ContractSummary, int]:
+    """Extract a summary; returns it with the number of attempts used.
+
+    On invalid output, sends the bad output and the validation error back and asks
+    for a fix, up to MAX_RETRIES times, then raises SchemaError.
+    """
+    expected_stop = "tool_use" if mode == "tool" else "end_turn"
+    messages = [
+        {"role": "user", "content": USER_PROMPT_TEMPLATE.format(contract=contract)}
+    ]
+    for attempt in range(1, MAX_RETRIES + 2):
+        response = send(client, messages, mode)
+        if verbose:
+            print(response.usage, file=sys.stderr)
+        if response.stop_reason != expected_stop:
+            raise ExtractionError(
+                f"no complete structured output (stop_reason={response.stop_reason})"
+            )
+        if verbose:
+            print("done", file=sys.stderr)
+        try:
+            summary = parse_reply(response, mode)
+        except ValidationError as e:
+            if attempt > MAX_RETRIES:
+                raise SchemaError(
+                    f"response did not match the ContractSummary schema after "
+                    f"{attempt} attempts ({e.error_count()} validation errors, "
+                    f"first: {e.errors()[0]['msg']})"
+                )
+            messages += retry_turn(response, mode, e)
+        else:
+            return summary, attempt
+    raise AssertionError("unreachable")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="python -m contract_extractor.extractor",
@@ -54,6 +200,12 @@ def main() -> None:
         default=DEFAULT_CONTRACT,
         help=f"path to the contract text file (default: {DEFAULT_CONTRACT.name})",
     )
+    parser.add_argument(
+        "--mode",
+        choices=MODES,
+        default="json",
+        help="json: schema-constrained JSON output (default); tool: forced tool call",
+    )
     args = parser.parse_args()
 
     load_dotenv(PROJECT_ROOT / ".env")
@@ -62,95 +214,11 @@ def main() -> None:
     if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
         fail("no API key found; set ANTHROPIC_API_KEY in your environment or .env")
 
-    JSON_ONLY_TOOL = {
-    "name": "json_only",
-    "description": "Response from LLM should be json only according to input schema",
-    "input_schema": ContractSummary.model_json_schema()
-    }
-
-    retry_flag = True
-    retry_count = 0
-    bad_output = ''
-    validation_error = ''
-    prompt_messages = [
-                    {
-                        "role": "user",
-                        "content": USER_PROMPT_TEMPLATE.format(contract=text_content)
-                    }
-                ]
-    while retry_count < 3:
-        try:            
-            if retry_count >= 1:
-                prompt_messages.append(
-                    {
-                        "role": "user",
-                        "content": f"this failed schema validation: error was {validation_error}. Fix the json."
-                    }
-                )
-                                        
-
-            client = anthropic.Anthropic()
-            response = client.messages.create(
-                model=MODEL,
-                max_tokens=4000,
-                system=SYSTEM_PROMPT,
-                messages=prompt_messages,
-                tools=[JSON_ONLY_TOOL],
-                tool_choice={"type":"tool", "name":"json_only"},
-                output_config={
-                    "effort": "low",
-                    #"format": {
-                     #   "type": "json_schema",
-                      #  "schema": anthropic.transform_schema(ContractSummary),
-                    #},
-                },
-            )
-        except anthropic.AuthenticationError:
-            fail("invalid API key (authentication failed); check ANTHROPIC_API_KEY")
-        except anthropic.PermissionDeniedError:
-            fail("API key does not have permission for this request")
-        except anthropic.RateLimitError:
-            fail("rate limit exceeded; wait a moment and try again")
-        except anthropic.APITimeoutError:
-            fail("request to the Anthropic API timed out")
-        except anthropic.APIConnectionError:
-            fail("could not connect to the Anthropic API; check your network connection")
-        except anthropic.APIStatusError as e:
-            fail(f"Anthropic API returned HTTP {e.status_code}: {e.message}")
-        except anthropic.APIError as e:
-            fail(f"Anthropic API error: {e.message}")
-
-        print(response.usage, file=sys.stderr)
-        if response.stop_reason != "tool_use" and response.stop_reason != "end_turn":
-            fail(f"no complete structured output (stop_reason={response.stop_reason})")
-        
-        print("done", file=sys.stderr)
-
-        if response.stop_reason == "tool_use":
-            text = response.content[0].input
-        prompt_messages.append(
-            {
-                "role": "assistant",
-                "content": text
-            }
-        )
-        try:
-            summary = ContractSummary.model_validate_json(text)
-        except ValidationError as e:
-            if retry_count >= 2:
-                fail(
-                            f"response did not match the ContractSummary schema "
-                            f"({e.error_count()} validation errors {str(e)})"
-                        )
-
-            retry_count += 1
-            retry_flag = True
-            validation_error = str(e)
-        if retry_flag:
-            continue
-        else:
-            print(summary.model_dump_json(indent=2))
-            break
+    try:
+        summary, _ = extract(anthropic.Anthropic(), text_content, args.mode, verbose=True)
+    except ExtractionError as e:
+        fail(str(e))
+    print(summary.model_dump_json(indent=2))
 
 
 if __name__ == "__main__":

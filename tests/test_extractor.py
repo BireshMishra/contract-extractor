@@ -193,3 +193,114 @@ def test_api_errors_give_one_line_message(run, error, message):
     assert message in err
     assert err.startswith("error: ")
     assert len(err.strip().splitlines()) == 1
+
+
+class SequenceClient(FakeClient):
+    """Replies with each canned reply in turn, recording a copy of every request."""
+
+    def __init__(self, replies):
+        super().__init__()
+        self.replies = list(replies)
+
+    def _create(self, **kwargs):
+        self.requests.append({**kwargs, "messages": list(kwargs["messages"])})
+        return self.replies.pop(0)
+
+
+def tool_reply(data, block_id="toolu_1"):
+    return SimpleNamespace(
+        stop_reason="tool_use",
+        content=[
+            SimpleNamespace(
+                type="tool_use", id=block_id, name=cli.TOOL_NAME, input=data
+            )
+        ],
+        usage="Usage(input_tokens=1, output_tokens=2)",
+    )
+
+
+SAMPLE = "sample1_saas_subscription.txt"
+
+
+def test_json_retry_sends_bad_output_and_error(run):
+    client = SequenceClient(
+        [text_reply('{"parties": "not a list"}'), text_reply(json.dumps(EXPECTED[SAMPLE]))]
+    )
+    _, code, out, _ = run(CONTRACTS_DIR / SAMPLE, client)
+
+    assert code == 0
+    assert json.loads(out) == EXPECTED[SAMPLE]
+    assert len(client.requests) == 2
+    roles = [m["role"] for m in client.requests[1]["messages"]]
+    assert roles == ["user", "assistant", "user"]
+    first, bad, fix = client.requests[1]["messages"]
+    assert "<contract>" in first["content"]
+    assert bad["content"] == '{"parties": "not a list"}'
+    assert "failed schema validation" in fix["content"]
+    assert "parties" in fix["content"]
+
+
+def test_stops_after_two_retries(run):
+    client = SequenceClient([text_reply('{"parties": "x"}')] * 3)
+    _, code, out, err = run(CONTRACTS_DIR / SAMPLE, client)
+
+    assert code == 1
+    assert out == ""
+    assert len(client.requests) == 3  # first try + 2 retries
+    assert "after 3 attempts" in err
+    assert "ContractSummary schema" in err
+
+
+def test_tool_mode_request_and_output(run, monkeypatch):
+    client = FakeClient(tool_reply(EXPECTED[SAMPLE]))
+    monkeypatch.setattr(cli.anthropic, "Anthropic", lambda: client)
+    monkeypatch.setattr(
+        sys, "argv", ["extractor", str(CONTRACTS_DIR / SAMPLE), "--mode", "tool"]
+    )
+
+    cli.main()
+
+    (request,) = client.requests
+    (tool,) = request["tools"]
+    assert tool["input_schema"] == cli.ContractSummary.model_json_schema()
+    assert request["tool_choice"] == {"type": "tool", "name": cli.TOOL_NAME}
+    assert "format" not in request["output_config"]
+
+
+def test_tool_mode_retry_uses_tool_result(monkeypatch, capsys):
+    bad = {"parties": "not a list"}
+    client = SequenceClient([tool_reply(bad), tool_reply(EXPECTED[SAMPLE], "toolu_2")])
+    monkeypatch.setattr(cli.anthropic, "Anthropic", lambda: client)
+    monkeypatch.setattr(
+        sys, "argv", ["extractor", str(CONTRACTS_DIR / SAMPLE), "--mode", "tool"]
+    )
+
+    cli.main()
+
+    assert json.loads(capsys.readouterr().out) == EXPECTED[SAMPLE]
+    _, assistant, result = client.requests[1]["messages"]
+    assert assistant["content"][0]["type"] == "tool_use"
+    assert assistant["content"][0]["input"] == bad
+    (block,) = result["content"]
+    assert block["type"] == "tool_result"
+    assert block["tool_use_id"] == "toolu_1"
+    assert block["is_error"] is True
+    assert "parties" in block["content"]
+
+
+def test_compare_counts_retries_and_failures():
+    from contract_extractor.extractor import compare
+
+    good = json.dumps(EXPECTED[SAMPLE])
+    client = SequenceClient(
+        [
+            text_reply(good),  # json run 1: clean
+            text_reply("{}"), text_reply(good),  # json run 2: one retry
+            tool_reply({}), tool_reply({}), tool_reply({}),  # tool run 1: fails
+            tool_reply(EXPECTED[SAMPLE]),  # tool run 2: clean
+        ]
+    )
+    stats = compare.compare(client, [CONTRACTS_DIR / SAMPLE], runs=2)
+
+    assert stats["json"] == {"runs": 2, "retried": 1, "failed": 0, "attempts": 3}
+    assert stats["tool"] == {"runs": 2, "retried": 1, "failed": 1, "attempts": 4}

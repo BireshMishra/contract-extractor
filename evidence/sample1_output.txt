@@ -1,0 +1,11 @@
+{
+  "parties": [
+    "NORTHWIND ANALYTICS LTD",
+    "BRIGHTFIELD RETAIL PLC"
+  ],
+  "effective_date": "2025-04-01",
+  "term_months": 24,
+  "termination_notice_days": 90,
+  "governing_law": "England and Wales",
+  "liability_cap": "Each party's total aggregate liability is capped at the total fees paid by Customer in the twelve (12) months preceding the event giving rise to the claim (subject to clause 5.1 carve-outs for death or personal injury caused by negligence, and fraud)."
+}

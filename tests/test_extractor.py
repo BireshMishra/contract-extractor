@@ -321,5 +321,34 @@ def test_compare_counts_retries_and_failures():
     )
     stats = compare.compare(client, [CONTRACTS_DIR / SAMPLE], runs=2)
 
-    assert stats["json"] == {"runs": 2, "retried": 1, "failed": 0, "attempts": 3}
-    assert stats["tool"] == {"runs": 2, "retried": 1, "failed": 1, "attempts": 4}
+    assert stats["json"] == {"runs": 2, "retried": 1, "failed": 0, "errored": 0, "attempts": 3}
+    assert stats["tool"] == {"runs": 2, "retried": 1, "failed": 1, "errored": 0, "attempts": 4}
+
+
+def test_compare_keeps_going_after_an_api_error(capsys):
+    from contract_extractor.extractor import compare
+
+    good = json.dumps(EXPECTED[SAMPLE])
+
+    class Flaky(SequenceClient):
+        def _create(self, **kwargs):
+            reply = self.replies.pop(0)
+            if isinstance(reply, Exception):
+                raise reply
+            return reply
+
+    client = Flaky(
+        [
+            status_error(anthropic.BadRequestError, 400),  # json run 1 errors
+            text_reply(good),  # json run 2 ok
+            tool_reply(EXPECTED[SAMPLE]),  # tool run 1 ok
+            text_reply("I cannot help", stop_reason="refusal"),  # tool run 2 refused
+        ]
+    )
+    stats = compare.compare(client, [CONTRACTS_DIR / SAMPLE], runs=2)
+
+    assert stats["json"] == {"runs": 2, "retried": 0, "failed": 0, "errored": 1, "attempts": 1}
+    assert stats["tool"] == {"runs": 2, "retried": 0, "failed": 0, "errored": 1, "attempts": 1}
+    assert "errored" in compare.format_report(stats)
+    err = capsys.readouterr().err
+    assert "HTTP 400" in err and "refusal" in err

@@ -1,9 +1,10 @@
 """Compare how often the JSON-schema mode and the tool-use mode fail.
 
 Runs every sample contract through both modes `--runs` times and reports, per mode,
-how many runs needed a retry (first reply invalid) and how many failed outright
-(still invalid after MAX_RETRIES retries). Makes real API calls: 2 modes x samples x
-runs requests at least.
+how many runs needed a retry (first reply invalid), how many failed outright (still
+invalid after MAX_RETRIES retries) and how many errored (API error, refusal, no tool
+call, truncation), which says nothing about the mode's schema reliability and is kept
+out of the other columns. Makes real API calls: at least 2 modes x samples x runs.
 """
 
 import argparse
@@ -27,7 +28,11 @@ from .__main__ import (
 
 
 def compare(client, contracts: list[Path], runs: int) -> dict[str, dict[str, int]]:
-    stats = {m: {"runs": 0, "retried": 0, "failed": 0, "attempts": 0} for m in MODES}
+    stats = {
+        m: {"runs": 0, "retried": 0, "failed": 0, "errored": 0, "attempts": 0}
+        for m in MODES
+    }
+    seen_errors: set[str] = set()
     for mode in MODES:
         for path in contracts:
             text = path.read_text(encoding="utf-8")
@@ -40,6 +45,11 @@ def compare(client, contracts: list[Path], runs: int) -> dict[str, dict[str, int
                     s["failed"] += 1
                     s["retried"] += 1
                     s["attempts"] += MAX_RETRIES + 1
+                except ExtractionError as e:
+                    s["errored"] += 1
+                    if str(e) not in seen_errors:
+                        seen_errors.add(str(e))
+                        print(f"[{mode}] {path.name}: {e}", file=sys.stderr)
                 else:
                     s["retried"] += attempts > 1
                     s["attempts"] += attempts
@@ -47,12 +57,18 @@ def compare(client, contracts: list[Path], runs: int) -> dict[str, dict[str, int
 
 
 def format_report(stats: dict[str, dict[str, int]]) -> str:
-    lines = [f"{'mode':<6} {'runs':>5} {'retried':>8} {'failed':>7} {'calls':>6}"]
+    lines = [
+        f"{'mode':<6} {'runs':>5} {'retried':>8} {'failed':>7} {'errored':>8} {'calls':>6}"
+    ]
     for mode, s in stats.items():
         lines.append(
-            f"{mode:<6} {s['runs']:>5} {s['retried']:>8} {s['failed']:>7} {s['attempts']:>6}"
+            f"{mode:<6} {s['runs']:>5} {s['retried']:>8} {s['failed']:>7} "
+            f"{s['errored']:>8} {s['attempts']:>6}"
         )
-    lines.append("retried = first reply invalid; failed = invalid after all retries")
+    lines.append(
+        "retried = first reply invalid; failed = invalid after all retries; "
+        "errored = API error or no usable reply (not counted in calls)"
+    )
     return "\n".join(lines)
 
 
@@ -70,10 +86,7 @@ def main() -> None:
         fail("no API key found; set ANTHROPIC_API_KEY in your environment or .env")
 
     contracts = sorted((PACKAGE_DIR / "contracts").glob("*.txt"))
-    try:
-        stats = compare(anthropic.Anthropic(), contracts, args.runs)
-    except ExtractionError as e:
-        fail(str(e))
+    stats = compare(anthropic.Anthropic(), contracts, args.runs)
     report = format_report(stats)
     print(report)
     if args.out:

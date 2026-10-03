@@ -65,7 +65,7 @@ def main() -> None:
     JSON_ONLY_TOOL = {
     "name": "json_only",
     "description": "Response from LLM should be json only according to input schema",
-    "input_schema": USER_PROMPT_TEMPLATE.format(contract=text_content)
+    "input_schema": ContractSummary.model_json_schema()
     }
 
     retry_flag = True
@@ -95,13 +95,14 @@ def main() -> None:
                 max_tokens=4000,
                 system=SYSTEM_PROMPT,
                 messages=prompt_messages,
-                tools=JSON_ONLY_TOOL
+                tools=[JSON_ONLY_TOOL],
+                tool_choice={"type":"tool", "name":"json_only"},
                 output_config={
                     "effort": "low",
-                    "format": {
-                        "type": "json_schema",
-                        "schema": anthropic.transform_schema(ContractSummary),
-                    },
+                    #"format": {
+                     #   "type": "json_schema",
+                      #  "schema": anthropic.transform_schema(ContractSummary),
+                    #},
                 },
             )
         except anthropic.AuthenticationError:
@@ -120,12 +121,13 @@ def main() -> None:
             fail(f"Anthropic API error: {e.message}")
 
         print(response.usage, file=sys.stderr)
-        if response.stop_reason != "end_turn":
+        if response.stop_reason != "tool_use" and response.stop_reason != "end_turn":
             fail(f"no complete structured output (stop_reason={response.stop_reason})")
         
         print("done", file=sys.stderr)
 
-        text = "".join(block.text for block in response.content if block.type == "text")
+        if response.stop_reason == "tool_use":
+            text = response.content[0].input
         prompt_messages.append(
             {
                 "role": "assistant",
@@ -142,6 +144,7 @@ def main() -> None:
                         )
 
             retry_count += 1
+            retry_flag = True
             validation_error = str(e)
         if retry_flag:
             continue

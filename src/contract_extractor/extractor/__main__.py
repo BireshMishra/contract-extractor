@@ -59,7 +59,7 @@ def main() -> None:
     try:
         client = anthropic.Anthropic()
         response = client.messages.parse(
-            model="claude-sonnet-4-5",
+            model="claude-sonnet-5-5",
             max_tokens=1000,
             system=SYSTEM_PROMPT,
             messages=[

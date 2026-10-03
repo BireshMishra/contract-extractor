@@ -36,9 +36,12 @@ def require_credentials():
         pytest.skip("no Anthropic credentials available")
 
 
+@pytest.mark.parametrize("mode", cli.MODES)
 @pytest.mark.parametrize("name", sorted(EXPECTED))
-def test_live_extraction(name, monkeypatch, capsys):
-    monkeypatch.setattr(sys, "argv", ["extractor", str(CONTRACTS_DIR / name)])
+def test_live_extraction(name, mode, monkeypatch, capsys):
+    monkeypatch.setattr(
+        sys, "argv", ["extractor", str(CONTRACTS_DIR / name), "--mode", mode]
+    )
     try:
         cli.main()
     except SystemExit as e:
@@ -75,4 +78,4 @@ def test_live_extraction(name, monkeypatch, capsys):
             if not any(alt.casefold() in value.casefold() for alt in alternatives):
                 problems.append(f"{field}: missing phrase {phrase!r} in {value!r}")
 
-    assert not problems, f"{name}:\n  " + "\n  ".join(problems)
+    assert not problems, f"{name} ({mode} mode):\n  " + "\n  ".join(problems)

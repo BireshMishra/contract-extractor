@@ -51,8 +51,10 @@ The live eval ([tests/test_live.py](tests/test_live.py)) sends the 5 sample cont
 
 ## Output modes and failure-rate comparison
 
-`--mode json` (default) asks for schema-constrained JSON; `--mode tool` forces a call to a
-`record_summary` tool whose `input_schema` is the `ContractSummary` JSON schema. In both
+`--mode json` (default) asks for schema-constrained JSON; `--mode tool` offers a strict
+`record_summary` tool whose `input_schema` is the `ContractSummary` JSON schema
+(`transform_schema`), with `tool_choice` set to `auto` (Sonnet 5.5 returns HTTP 400 for a
+forced tool) and the system prompt telling the model to call it. In both
 modes, invalid output is sent back (the bad output plus the validation error) for up to 2
 retries, then the run fails with a clear error.
 

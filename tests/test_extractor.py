@@ -100,6 +100,8 @@ def test_request_shape(run):
     assert request["max_tokens"] >= 4000
     assert request["output_config"]["effort"] == "low"
     assert request["output_config"]["format"]["type"] == "json_schema"
+    assert request["system"] == cli.SYSTEM_PROMPT
+    assert "tools" not in request
     content = request["messages"][0]["content"]
     assert f"<contract>\n{path.read_text('utf-8')}\n</contract>" in content
 
@@ -262,9 +264,26 @@ def test_tool_mode_request_and_output(run, monkeypatch):
 
     (request,) = client.requests
     (tool,) = request["tools"]
-    assert tool["input_schema"] == cli.ContractSummary.model_json_schema()
-    assert request["tool_choice"] == {"type": "tool", "name": cli.TOOL_NAME}
+    assert tool["name"] == cli.TOOL_NAME
+    assert tool["strict"] is True
+    assert tool["input_schema"] == cli.anthropic.transform_schema(cli.ContractSummary)
+    assert request["tool_choice"] == {"type": "auto"}  # a forced tool is a 400
+    assert cli.TOOL_NAME in request["system"]
     assert "format" not in request["output_config"]
+
+
+def test_tool_mode_text_reply_is_reported(monkeypatch, capsys):
+    client = FakeClient(text_reply("here you go", stop_reason="end_turn"))
+    monkeypatch.setattr(cli.anthropic, "Anthropic", lambda: client)
+    monkeypatch.setattr(
+        sys, "argv", ["extractor", str(CONTRACTS_DIR / SAMPLE), "--mode", "tool"]
+    )
+
+    with pytest.raises(SystemExit):
+        cli.main()
+
+    err = capsys.readouterr().err
+    assert "instead of calling record_summary" in err
 
 
 def test_tool_mode_retry_uses_tool_result(monkeypatch, capsys):

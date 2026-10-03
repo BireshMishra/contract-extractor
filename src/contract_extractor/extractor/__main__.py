@@ -18,6 +18,10 @@ MODEL = "claude-sonnet-5-5"
 MAX_RETRIES = 2
 MODES = ("json", "tool")
 TOOL_NAME = "record_summary"
+TOOL_INSTRUCTION = (
+    f"Return the result by calling the {TOOL_NAME} tool exactly once. "
+    "Do not answer in plain text."
+)
 
 
 class ExtractionError(Exception):
@@ -52,19 +56,26 @@ def read_contract(path: Path) -> str:
 
 
 def request_options(mode: str) -> dict:
-    """Mode-specific arguments: a JSON-schema output format, or a single forced tool."""
+    """Mode-specific arguments: a JSON-schema output format, or a strict tool.
+
+    Sonnet 5.5 rejects a forced tool_choice (HTTP 400), so tool mode uses "auto" and
+    the system prompt tells the model to call the tool.
+    """
     if mode == "tool":
         tool = {
             "name": TOOL_NAME,
             "description": "Record the structured summary extracted from the contract.",
-            "input_schema": ContractSummary.model_json_schema(),
+            "strict": True,
+            "input_schema": anthropic.transform_schema(ContractSummary),
         }
         return {
+            "system": f"{SYSTEM_PROMPT}\n\n{TOOL_INSTRUCTION}",
             "tools": [tool],
-            "tool_choice": {"type": "tool", "name": TOOL_NAME},
+            "tool_choice": {"type": "auto"},
             "output_config": {"effort": "low"},
         }
     return {
+        "system": SYSTEM_PROMPT,
         "output_config": {
             "effort": "low",
             "format": {
@@ -80,7 +91,6 @@ def send(client, messages: list[dict], mode: str):
         return client.messages.create(
             model=MODEL,
             max_tokens=4000,
-            system=SYSTEM_PROMPT,
             messages=messages,
             **request_options(mode),
         )
@@ -167,6 +177,11 @@ def extract(
         response = send(client, messages, mode)
         if verbose:
             print(response.usage, file=sys.stderr)
+        if mode == "tool" and response.stop_reason == "end_turn":
+            raise ExtractionError(
+                f"model answered in text instead of calling {TOOL_NAME} "
+                f"(stop_reason={response.stop_reason})"
+            )
         if response.stop_reason != expected_stop:
             raise ExtractionError(
                 f"no complete structured output (stop_reason={response.stop_reason})"

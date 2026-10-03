@@ -106,7 +106,7 @@ def main() -> None:
     except ValidationError as e:
         fail(
             f"response did not match the ContractSummary schema "
-            f"(stop_reason={response.stop_reason}, {e.error_count()} validation errors)"
+            f"({e.error_count()} validation errors)"
         )
     print(summary.model_dump_json(indent=2))
 

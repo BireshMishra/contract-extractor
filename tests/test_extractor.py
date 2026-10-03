@@ -113,14 +113,15 @@ def test_truncated_reply_reports_stop_reason(run):
     assert "stop_reason=max_tokens" in err
 
 
-def test_schema_mismatch_reports_stop_reason(run):
+def test_schema_mismatch_is_reported(run):
     client = FakeClient(text_reply('{"parties": "not a list"}'))
     _, code, out, err = run(CONTRACTS_DIR / "sample2_consulting_msa.txt", client)
 
     assert code == 1
     assert out == ""
     assert "ContractSummary schema" in err
-    assert "stop_reason=end_turn" in err
+    assert "validation errors" in err
+    assert "stop_reason" not in err
 
 
 def test_missing_file(run):

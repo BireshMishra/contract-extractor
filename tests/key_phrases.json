@@ -13,7 +13,7 @@
   },
   "sample4_supply_agreement.txt": {
     "governing_law": ["New York"],
-    "liability_cap": ["2,000,000"]
+    "liability_cap": [["2,000,000", "two million"]]
   },
   "sample5_amendment_letter.txt": {
     "governing_law": [],

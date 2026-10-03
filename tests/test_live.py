@@ -1,8 +1,9 @@
 """Live eval: sends each sample contract to the real API and scores the extraction.
 
 Opt in with `pytest --live`. Exact match for dates, ints and nulls; a key-phrase
-containment check for free text (phrases in key_phrases.json). A free-text field
-whose expected value is null must come back null.
+containment check for free text (phrases in key_phrases.json; a phrase given as a
+list is satisfied by any one of its alternatives). A free-text field whose expected
+value is null must come back null.
 """
 
 import json
@@ -70,7 +71,8 @@ def test_live_extraction(name, monkeypatch, capsys):
             problems.append(f"{field}: expected text, got null")
             continue
         for phrase in KEY_PHRASES[name][field]:
-            if phrase.casefold() not in value.casefold():
+            alternatives = [phrase] if isinstance(phrase, str) else phrase
+            if not any(alt.casefold() in value.casefold() for alt in alternatives):
                 problems.append(f"{field}: missing phrase {phrase!r} in {value!r}")
 
     assert not problems, f"{name}:\n  " + "\n  ".join(problems)

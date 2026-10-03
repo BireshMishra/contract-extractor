@@ -1,0 +1,35 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.9, pytest-9.1.1, pluggy-1.6.0 -- F:\Workspace\contract-extractor\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: F:\Workspace\contract-extractor
+configfile: pyproject.toml
+testpaths: tests
+plugins: anyio-4.15.1
+collecting ... collected 24 items
+
+tests/test_extractor.py::test_sample_contract_matches_expected[sample1_saas_subscription.txt] PASSED [  4%]
+tests/test_extractor.py::test_sample_contract_matches_expected[sample2_consulting_msa.txt] PASSED [  8%]
+tests/test_extractor.py::test_sample_contract_matches_expected[sample3_mutual_nda.txt] PASSED [ 12%]
+tests/test_extractor.py::test_sample_contract_matches_expected[sample4_supply_agreement.txt] PASSED [ 16%]
+tests/test_extractor.py::test_sample_contract_matches_expected[sample5_amendment_letter.txt] PASSED [ 20%]
+tests/test_extractor.py::test_stdout_is_pure_json PASSED                 [ 25%]
+tests/test_extractor.py::test_request_shape PASSED                       [ 29%]
+tests/test_extractor.py::test_truncated_reply_reports_stop_reason PASSED [ 33%]
+tests/test_extractor.py::test_schema_mismatch_reports_stop_reason PASSED [ 37%]
+tests/test_extractor.py::test_missing_file PASSED                        [ 41%]
+tests/test_extractor.py::test_directory_path PASSED                      [ 45%]
+tests/test_extractor.py::test_empty_file PASSED                          [ 50%]
+tests/test_extractor.py::test_missing_api_key PASSED                     [ 54%]
+tests/test_extractor.py::test_api_errors_give_one_line_message[error0-invalid API key] PASSED [ 58%]
+tests/test_extractor.py::test_api_errors_give_one_line_message[error1-permission] PASSED [ 62%]
+tests/test_extractor.py::test_api_errors_give_one_line_message[error2-rate limit] PASSED [ 66%]
+tests/test_extractor.py::test_api_errors_give_one_line_message[error3-HTTP 500] PASSED [ 70%]
+tests/test_extractor.py::test_api_errors_give_one_line_message[error4-could not connect] PASSED [ 75%]
+tests/test_extractor.py::test_api_errors_give_one_line_message[error5-timed out] PASSED [ 79%]
+tests/test_live.py::test_live_extraction[sample1_saas_subscription.txt] PASSED [ 83%]
+tests/test_live.py::test_live_extraction[sample2_consulting_msa.txt] PASSED [ 87%]
+tests/test_live.py::test_live_extraction[sample3_mutual_nda.txt] PASSED  [ 91%]
+tests/test_live.py::test_live_extraction[sample4_supply_agreement.txt] PASSED [ 95%]
+tests/test_live.py::test_live_extraction[sample5_amendment_letter.txt] PASSED [100%]
+
+============================= 24 passed in 16.75s =============================

@@ -126,38 +126,28 @@ def parse_reply(response, mode: str) -> ContractSummary:
 
 
 def retry_turn(response, mode: str, error: ValidationError) -> list[dict]:
-    """Messages that show the model its bad output and the validation error."""
+    """Messages that show the model its bad output and the validation error.
+
+    The assistant turn is the response content unchanged (thinking blocks included).
+    """
     problem = f"That output failed schema validation:\n{error}\nFix it and try again."
     if mode == "tool":
-        block = next(b for b in response.content if b.type == "tool_use")
-        return [
+        # Every tool_use needs a tool_result, and the results must come first.
+        content = [
             {
-                "role": "assistant",
-                "content": [
-                    {
-                        "type": "tool_use",
-                        "id": block.id,
-                        "name": block.name,
-                        "input": block.input,
-                    }
-                ],
-            },
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "is_error": True,
-                        "content": problem,
-                    }
-                ],
-            },
+                "type": "tool_result",
+                "tool_use_id": block.id,
+                "is_error": True,
+                "content": problem,
+            }
+            for block in response.content
+            if block.type == "tool_use"
         ]
-    text = "".join(b.text for b in response.content if b.type == "text")
+    else:
+        content = problem
     return [
-        {"role": "assistant", "content": text},
-        {"role": "user", "content": problem},
+        {"role": "assistant", "content": response.content},
+        {"role": "user", "content": content},
     ]
 
 

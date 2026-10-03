@@ -203,10 +203,13 @@ class SequenceClient(FakeClient):
     def __init__(self, replies):
         super().__init__()
         self.replies = list(replies)
+        self.replies_given = []
 
     def _create(self, **kwargs):
         self.requests.append({**kwargs, "messages": list(kwargs["messages"])})
-        return self.replies.pop(0)
+        reply = self.replies.pop(0)
+        self.replies_given.append(reply)
+        return reply
 
 
 def tool_reply(data, block_id="toolu_1"):
@@ -237,7 +240,7 @@ def test_json_retry_sends_bad_output_and_error(run):
     assert roles == ["user", "assistant", "user"]
     first, bad, fix = client.requests[1]["messages"]
     assert "<contract>" in first["content"]
-    assert bad["content"] == '{"parties": "not a list"}'
+    assert bad["content"] is client.replies_given[0].content
     assert "failed schema validation" in fix["content"]
     assert "parties" in fix["content"]
 
@@ -298,13 +301,29 @@ def test_tool_mode_retry_uses_tool_result(monkeypatch, capsys):
 
     assert json.loads(capsys.readouterr().out) == EXPECTED[SAMPLE]
     _, assistant, result = client.requests[1]["messages"]
-    assert assistant["content"][0]["type"] == "tool_use"
-    assert assistant["content"][0]["input"] == bad
+    assert assistant["content"] is client.replies_given[0].content
     (block,) = result["content"]
     assert block["type"] == "tool_result"
     assert block["tool_use_id"] == "toolu_1"
     assert block["is_error"] is True
     assert "parties" in block["content"]
+
+
+def test_retry_keeps_thinking_blocks(monkeypatch, capsys):
+    thinking = SimpleNamespace(type="thinking", thinking="hmm", signature="sig")
+    bad = tool_reply({"parties": "not a list"})
+    bad.content = [thinking, *bad.content]
+    client = SequenceClient([bad, tool_reply(EXPECTED[SAMPLE], "toolu_2")])
+    monkeypatch.setattr(cli.anthropic, "Anthropic", lambda: client)
+    monkeypatch.setattr(
+        sys, "argv", ["extractor", str(CONTRACTS_DIR / SAMPLE), "--mode", "tool"]
+    )
+
+    cli.main()
+
+    _, assistant, result = client.requests[1]["messages"]
+    assert assistant["content"] == [thinking, bad.content[1]]
+    assert [b["tool_use_id"] for b in result["content"]] == ["toolu_1"]
 
 
 def test_compare_counts_retries_and_failures():

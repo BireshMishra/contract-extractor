@@ -1,22 +1,23 @@
 import argparse
+import os
 import sys
 from pathlib import Path
+from typing import NoReturn
 
 import anthropic
 from dotenv import load_dotenv
+from pydantic import ValidationError
 
 from .models import ContractSummary
+from .prompts import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
 
 PACKAGE_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = PACKAGE_DIR.parent.parent
 DEFAULT_CONTRACT = PACKAGE_DIR / "contracts" / "sample1_saas_subscription.txt"
+MODEL = "claude-sonnet-5-5"
 
 
-SYSTEM_PROMPT = """You extract structured data from contracts.
-Use null for any field whose value is not stated in the contract."""
-
-
-def fail(message: str) -> None:
+def fail(message: str) -> NoReturn:
     print(f"error: {message}", file=sys.stderr)
     sys.exit(1)
 
@@ -56,25 +57,29 @@ def main() -> None:
     load_dotenv(PROJECT_ROOT / ".env")
     text_content = read_contract(args.contract)
 
+    if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+        fail("no API key found; set ANTHROPIC_API_KEY in your environment or .env")
+
     try:
         client = anthropic.Anthropic()
-        response = client.messages.parse(
-            model="claude-sonnet-5-5",
-            max_tokens=1000,
+        response = client.messages.create(
+            model=MODEL,
+            max_tokens=4000,
             system=SYSTEM_PROMPT,
             messages=[
                 {
                     "role": "user",
-                    "content": f"Extract the contract summary from this contract:\n\n{text_content}\n",
+                    "content": USER_PROMPT_TEMPLATE.format(contract=text_content),
                 }
             ],
-            output_format=ContractSummary,
+            output_config={
+                "effort": "low",
+                "format": {
+                    "type": "json_schema",
+                    "schema": anthropic.transform_schema(ContractSummary),
+                },
+            },
         )
-    except TypeError as e:
-        # The SDK raises TypeError when no API key/auth token is configured.
-        if "authentication method" in str(e):
-            fail("no API key found; set ANTHROPIC_API_KEY in your environment or .env")
-        raise
     except anthropic.AuthenticationError:
         fail("invalid API key (authentication failed); check ANTHROPIC_API_KEY")
     except anthropic.PermissionDeniedError:
@@ -94,9 +99,18 @@ def main() -> None:
         print("done", file=sys.stderr)
     print(response.usage, file=sys.stderr)
 
-    if response.parsed_output is None:
-        raise SystemExit(f"No structured output (stop_reason={response.stop_reason})")
-    print(response.parsed_output.model_dump_json(indent=2))
+    if response.stop_reason != "end_turn":
+        fail(f"no complete structured output (stop_reason={response.stop_reason})")
+
+    text = "".join(block.text for block in response.content if block.type == "text")
+    try:
+        summary = ContractSummary.model_validate_json(text)
+    except ValidationError as e:
+        fail(
+            f"response did not match the ContractSummary schema "
+            f"(stop_reason={response.stop_reason}, {e.error_count()} validation errors)"
+        )
+    print(summary.model_dump_json(indent=2))
 
 
 if __name__ == "__main__":

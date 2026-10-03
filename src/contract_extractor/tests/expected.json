@@ -1,0 +1,46 @@
+{
+  "sample1_saas_subscription.txt": {
+    "parties": ["NORTHWIND ANALYTICS LTD", "BRIGHTFIELD RETAIL PLC"],
+    "effective_date": "2025-04-01",
+    "term_months": 24,
+    "termination_notice_days": 90,
+    "governing_law": "England and Wales",
+    "liability_cap": "Total fees paid by Customer in the twelve (12) months preceding the event giving rise to the claim (no limit for death, personal injury or fraud)"
+  },
+  "sample2_consulting_msa.txt": {
+    "parties": ["LARKSPUR CONSULTING LLC", "MERIDIAN HEALTH PARTNERS, INC."],
+    "effective_date": "2026-01-15",
+    "term_months": 24,
+    "termination_notice_days": 30,
+    "governing_law": null,
+    "liability_cap": "Total fees paid or payable under the relevant SOW"
+  },
+  "sample3_mutual_nda.txt": {
+    "parties": ["ORION BIOSYSTEMS GMBH", "TESSELLATE SOFTWARE PRIVATE LIMITED"],
+    "effective_date": "2026-03-03",
+    "term_months": 36,
+    "termination_notice_days": 60,
+    "governing_law": "Federal Republic of Germany",
+    "liability_cap": null
+  },
+  "sample4_supply_agreement.txt": {
+    "parties": [
+      "KESTREL COMPONENTS INC.",
+      "HALVORSEN MANUFACTURING AS",
+      "KESTREL HOLDINGS CORP."
+    ],
+    "effective_date": "2025-06-12",
+    "term_months": 12,
+    "termination_notice_days": null,
+    "governing_law": "State of New York",
+    "liability_cap": "USD 2,000,000"
+  },
+  "sample5_amendment_letter.txt": {
+    "parties": ["Northwind Analytics Ltd", "Brightfield Retail plc"],
+    "effective_date": "2025-10-01",
+    "term_months": null,
+    "termination_notice_days": 60,
+    "governing_law": null,
+    "liability_cap": null
+  }
+}

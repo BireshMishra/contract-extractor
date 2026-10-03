@@ -7,5 +7,5 @@
   "term_months": 24,
   "termination_notice_days": 30,
   "governing_law": null,
-  "liability_cap": "Total fees paid or payable under that SOW"
+  "liability_cap": "Each party's total liability under any SOW shall not exceed the total fees paid or payable under that SOW."
 }

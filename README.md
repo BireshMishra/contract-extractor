@@ -60,14 +60,19 @@ retries, then the run fails with a clear error.
 
 ## Providers
 
-`--provider claude` (default) or `--provider openai` (needs `OPENAI_API_KEY`). Both are
-`LLMClient`s ([providers.py](src/contract_extractor/extractor/providers.py)): one method,
-`complete(system, user)`. The provider-neutral path ([extract.py](src/contract_extractor/extractor/extract.py))
-puts the JSON schema in the system prompt, validates the reply and retries up to twice. Since
-`complete()` takes one user string, a retry resends the request with the bad output and the
-error appended. `--mode text` runs this path on Claude; OpenAI always uses it. Claude's
-`--mode json|tool` stay as the native path (schema-constrained output, strict tool use,
-full reply passed back on retry). The OpenAI path has not been run against the real API.
+`--provider claude` (default) or `--provider openai` (needs `OPENAI_API_KEY`). Both implement
+`LLMClient` ([providers.py](src/contract_extractor/extractor/providers.py)): one method,
+`complete(system, user, schema)` returning text, token counts and a normalised `stop_reason`
+(`end`, `max_tokens`, `refusal`, `other`). The schema goes to each provider's own
+structured-output feature: Claude's `output_config` JSON schema (`--mode json`, default) or a
+strict tool (`--mode tool`, Claude only), and OpenAI's strict `response_format`. Each client
+turns its SDK's errors into `ExtractionError`, so the validate-and-retry loop
+([extract.py](src/contract_extractor/extractor/extract.py)) is written once: a cut-off or refused
+reply fails with its stop reason, and invalid output is retried up to twice. Claude runs at low
+effort so thinking does not eat `max_tokens`. Because `complete()` takes one user string, a
+retry resends the request with the bad output and the error appended, rather than passing the
+reply back as a real assistant turn (so no thinking-block or `tool_result` passthrough). The
+OpenAI path has not been run against the real API.
 
 `python -m contract_extractor.extractor.compare --runs 5 --out evidence/mode_comparison.txt`
 runs every sample through both modes and reports how many runs needed a retry or failed

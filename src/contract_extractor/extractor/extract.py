@@ -1,6 +1,5 @@
-"""Provider-agnostic extraction: prompt for JSON, validate, retry on bad output."""
+"""Extraction through any LLMClient: one place for validation and retries."""
 
-import json
 import sys
 
 from pydantic import ValidationError
@@ -12,11 +11,6 @@ from .providers import LLMClient
 
 MAX_RETRIES = 2
 
-JSON_INSTRUCTION = (
-    "Reply with only a JSON object that matches this JSON schema. "
-    "No prose and no code fences.\n"
-)
-
 
 def strip_code_fence(text: str) -> str:
     """Models sometimes wrap JSON in a ```json fence despite being told not to."""
@@ -27,29 +21,36 @@ def strip_code_fence(text: str) -> str:
     return text.strip()
 
 
-def extract_text(
+def extract(
     client: LLMClient, contract: str, verbose: bool = False
 ) -> tuple[ContractSummary, int]:
-    """Extract a summary through any LLMClient; returns it with the attempts used.
+    """Extract a summary; returns it with the number of attempts used.
 
-    complete() takes a single user string, so a retry resends the original request
-    with the model's bad output and the validation error appended. Gives up with a
-    SchemaError after MAX_RETRIES retries.
+    complete() takes one user string, so a retry resends the original request with
+    the model's bad output and the validation error appended. After MAX_RETRIES
+    retries it raises SchemaError; a cut-off or refused reply raises ExtractionError.
     """
-    schema = json.dumps(ContractSummary.model_json_schema())
-    system = f"{SYSTEM_PROMPT}\n\n{JSON_INSTRUCTION}{schema}"
+    schema = ContractSummary.model_json_schema()
     base_user = USER_PROMPT_TEMPLATE.format(contract=contract)
     user = base_user
     for attempt in range(1, MAX_RETRIES + 2):
-        response = client.complete(system, user)
+        response = client.complete(SYSTEM_PROMPT, user, schema)
         if verbose:
             print(
                 f"tokens: input={response.input_tokens} output={response.output_tokens}",
                 file=sys.stderr,
             )
+        if response.stop_reason != "end":
+            raise ExtractionError(
+                f"no complete structured output (stop_reason={response.stop_reason})"
+            )
+        if verbose:
             print("done", file=sys.stderr)
         try:
-            return ContractSummary.model_validate_json(strip_code_fence(response.text)), attempt
+            return (
+                ContractSummary.model_validate_json(strip_code_fence(response.text)),
+                attempt,
+            )
         except ValidationError as e:
             if attempt > MAX_RETRIES:
                 raise SchemaError(

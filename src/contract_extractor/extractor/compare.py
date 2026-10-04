@@ -10,37 +10,34 @@ out of the other columns. Makes real API calls: at least 2 modes x samples x run
 import argparse
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
-import anthropic
 from dotenv import load_dotenv
 
-from .__main__ import (
-    MAX_RETRIES,
-    MODES,
-    PACKAGE_DIR,
-    PROJECT_ROOT,
-    ExtractionError,
-    SchemaError,
-    extract,
-    fail,
-)
+from .__main__ import MODES, PACKAGE_DIR, PROJECT_ROOT, fail
+from .errors import ExtractionError, SchemaError
+from .extract import MAX_RETRIES, extract
+from .providers import ClaudeClient, LLMClient
 
 
-def compare(client, contracts: list[Path], runs: int) -> dict[str, dict[str, int]]:
+def compare(
+    make_client: Callable[[str], LLMClient], contracts: list[Path], runs: int
+) -> dict[str, dict[str, int]]:
     stats = {
         m: {"runs": 0, "retried": 0, "failed": 0, "errored": 0, "attempts": 0}
         for m in MODES
     }
     seen_errors: set[str] = set()
     for mode in MODES:
+        client = make_client(mode)
         for path in contracts:
             text = path.read_text(encoding="utf-8")
             for _ in range(runs):
                 s = stats[mode]
                 s["runs"] += 1
                 try:
-                    _, attempts = extract(client, text, mode)
+                    _, attempts = extract(client, text)
                 except SchemaError:
                     s["failed"] += 1
                     s["retried"] += 1
@@ -86,7 +83,7 @@ def main() -> None:
         fail("no API key found; set ANTHROPIC_API_KEY in your environment or .env")
 
     contracts = sorted((PACKAGE_DIR / "contracts").glob("*.txt"))
-    stats = compare(anthropic.Anthropic(), contracts, args.runs)
+    stats = compare(lambda mode: ClaudeClient(mode=mode), contracts, args.runs)
     report = format_report(stats)
     print(report)
     if args.out:

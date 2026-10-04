@@ -1,3 +1,5 @@
+"""CLI behaviour against a fake Anthropic SDK client (Claude path)."""
+
 import json
 import sys
 from pathlib import Path
@@ -8,32 +10,47 @@ import httpx2
 import pytest
 
 from contract_extractor.extractor import __main__ as cli
+from contract_extractor.extractor import compare, providers
+from contract_extractor.extractor.models import ContractSummary
 
 CONTRACTS_DIR = Path(cli.__file__).resolve().parent.parent / "contracts"
 EXPECTED = json.loads((Path(__file__).parent / "expected.json").read_text("utf-8"))
+SAMPLE = "sample1_saas_subscription.txt"
+USAGE = SimpleNamespace(input_tokens=1, output_tokens=2)
+TOKENS_LINE = "tokens: input=1 output=2"
 
 
 class FakeClient:
-    """Stands in for anthropic.Anthropic; records requests, replies with a canned result."""
+    """Stands in for anthropic.Anthropic; replays replies (or raises errors) in turn."""
 
-    def __init__(self, reply=None, error=None):
-        self.reply = reply
-        self.error = error
+    def __init__(self, *replies):
+        self.replies = list(replies)
         self.requests = []
         self.messages = SimpleNamespace(create=self._create)
 
     def _create(self, **kwargs):
         self.requests.append(kwargs)
-        if self.error is not None:
-            raise self.error
-        return self.reply
+        reply = self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
 
 
 def text_reply(text, stop_reason="end_turn"):
     return SimpleNamespace(
         stop_reason=stop_reason,
         content=[SimpleNamespace(type="text", text=text)],
-        usage="Usage(input_tokens=1, output_tokens=2)",
+        usage=USAGE,
+    )
+
+
+def tool_reply(data, stop_reason="tool_use"):
+    return SimpleNamespace(
+        stop_reason=stop_reason,
+        content=[
+            SimpleNamespace(type="tool_use", id="toolu_1", name=providers.TOOL_NAME, input=data)
+        ],
+        usage=USAGE,
     )
 
 
@@ -54,9 +71,9 @@ def isolated_env(monkeypatch):
 def run(monkeypatch, capsys):
     """Run the CLI against a fake client; returns (client, exit_code, stdout, stderr)."""
 
-    def _run(contract_path, client):
-        monkeypatch.setattr(cli.anthropic, "Anthropic", lambda: client)
-        monkeypatch.setattr(sys, "argv", ["extractor", str(contract_path)])
+    def _run(contract_path, client, *flags):
+        monkeypatch.setattr(anthropic, "Anthropic", lambda: client)
+        monkeypatch.setattr(sys, "argv", ["extractor", str(contract_path), *flags])
         code = 0
         try:
             cli.main()
@@ -70,28 +87,24 @@ def run(monkeypatch, capsys):
 
 @pytest.mark.parametrize("name", sorted(EXPECTED))
 def test_sample_contract_matches_expected(run, name):
-    path = CONTRACTS_DIR / name
     client = FakeClient(text_reply(json.dumps(EXPECTED[name])))
 
-    _, code, out, err = run(path, client)
+    _, code, out, err = run(CONTRACTS_DIR / name, client)
 
     assert code == 0
     assert json.loads(out) == EXPECTED[name]
-    assert err.splitlines() == [client.reply.usage, "done"]
+    assert err.splitlines() == [TOKENS_LINE, "done"]
 
 
 def test_stdout_is_pure_json(run):
     name = "sample2_consulting_msa.txt"
-    _, _, out, _ = run(
-        CONTRACTS_DIR / name, FakeClient(text_reply(json.dumps(EXPECTED[name])))
-    )
+    _, _, out, _ = run(CONTRACTS_DIR / name, FakeClient(text_reply(json.dumps(EXPECTED[name]))))
     json.loads(out)  # raises if anything but JSON was printed
 
 
-def test_request_shape(run):
-    name = "sample1_saas_subscription.txt"
-    path = CONTRACTS_DIR / name
-    client = FakeClient(text_reply(json.dumps(EXPECTED[name])))
+def test_json_mode_request_shape(run):
+    path = CONTRACTS_DIR / SAMPLE
+    client = FakeClient(text_reply(json.dumps(EXPECTED[SAMPLE])))
 
     run(path, client)
 
@@ -100,10 +113,35 @@ def test_request_shape(run):
     assert request["max_tokens"] >= 4000
     assert request["output_config"]["effort"] == "low"
     assert request["output_config"]["format"]["type"] == "json_schema"
-    assert request["system"] == cli.SYSTEM_PROMPT
     assert "tools" not in request
     content = request["messages"][0]["content"]
     assert f"<contract>\n{path.read_text('utf-8')}\n</contract>" in content
+
+
+def test_tool_mode_request_shape(run):
+    client = FakeClient(tool_reply(EXPECTED[SAMPLE]))
+
+    _, code, out, _ = run(CONTRACTS_DIR / SAMPLE, client, "--mode", "tool")
+
+    assert code == 0
+    assert json.loads(out) == EXPECTED[SAMPLE]
+    (request,) = client.requests
+    (tool,) = request["tools"]
+    assert tool["name"] == providers.TOOL_NAME
+    assert tool["strict"] is True
+    assert tool["input_schema"] == anthropic.transform_schema(ContractSummary.model_json_schema())
+    assert request["tool_choice"] == {"type": "auto"}  # a forced tool is a 400
+    assert providers.TOOL_NAME in request["system"]
+    assert request["output_config"] == {"effort": "low"}
+
+
+def test_tool_mode_text_reply_is_reported(run):
+    client = FakeClient(text_reply("here you go"))
+    _, code, out, err = run(CONTRACTS_DIR / SAMPLE, client, "--mode", "tool")
+
+    assert code == 1
+    assert out == ""
+    assert "instead of calling record_summary" in err
 
 
 def test_truncated_reply_reports_stop_reason(run):
@@ -113,16 +151,40 @@ def test_truncated_reply_reports_stop_reason(run):
     assert code == 1
     assert out == ""
     assert "stop_reason=max_tokens" in err
+    assert len(client.requests) == 1  # truncation is not retried
 
 
-def test_schema_mismatch_is_reported(run):
-    client = FakeClient(text_reply('{"parties": "not a list"}'))
-    _, code, out, err = run(CONTRACTS_DIR / "sample2_consulting_msa.txt", client)
+def test_truncated_tool_reply_reports_stop_reason(run):
+    client = FakeClient(tool_reply({"parties": ["A"]}, stop_reason="max_tokens"))
+    _, code, _, err = run(CONTRACTS_DIR / SAMPLE, client, "--mode", "tool")
+
+    assert code == 1
+    assert "stop_reason=max_tokens" in err
+
+
+def test_json_retry_sends_bad_output_and_error(run):
+    client = FakeClient(text_reply('{"parties": "nope"}'), text_reply(json.dumps(EXPECTED[SAMPLE])))
+
+    _, code, out, _ = run(CONTRACTS_DIR / SAMPLE, client)
+
+    assert code == 0
+    assert json.loads(out) == EXPECTED[SAMPLE]
+    first, second = client.requests
+    retry = second["messages"][0]["content"]
+    assert retry.startswith(first["messages"][0]["content"])
+    assert '{"parties": "nope"}' in retry
+    assert "failed schema validation" in retry
+
+
+def test_stops_after_two_retries(run):
+    client = FakeClient(text_reply('{"parties": "x"}'))
+    _, code, out, err = run(CONTRACTS_DIR / SAMPLE, client)
 
     assert code == 1
     assert out == ""
+    assert len(client.requests) == 3  # first try + 2 retries
+    assert "after 3 attempts" in err
     assert "ContractSummary schema" in err
-    assert "validation errors" in err
     assert "stop_reason" not in err
 
 
@@ -187,7 +249,7 @@ def test_missing_api_key(run, monkeypatch):
     ],
 )
 def test_api_errors_give_one_line_message(run, error, message):
-    client = FakeClient(error=error)
+    client = FakeClient(error)
     _, code, out, err = run(CONTRACTS_DIR / "sample2_consulting_msa.txt", client)
 
     assert code == 1
@@ -197,174 +259,39 @@ def test_api_errors_give_one_line_message(run, error, message):
     assert len(err.strip().splitlines()) == 1
 
 
-class SequenceClient(FakeClient):
-    """Replies with each canned reply in turn, recording a copy of every request."""
-
-    def __init__(self, replies):
-        super().__init__()
-        self.replies = list(replies)
-        self.replies_given = []
-
-    def _create(self, **kwargs):
-        self.requests.append({**kwargs, "messages": list(kwargs["messages"])})
-        reply = self.replies.pop(0)
-        self.replies_given.append(reply)
-        return reply
-
-
-def tool_reply(data, block_id="toolu_1"):
-    return SimpleNamespace(
-        stop_reason="tool_use",
-        content=[
-            SimpleNamespace(
-                type="tool_use", id=block_id, name=cli.TOOL_NAME, input=data
-            )
-        ],
-        usage="Usage(input_tokens=1, output_tokens=2)",
-    )
-
-
-SAMPLE = "sample1_saas_subscription.txt"
-
-
-def test_json_retry_sends_bad_output_and_error(run):
-    client = SequenceClient(
-        [text_reply('{"parties": "not a list"}'), text_reply(json.dumps(EXPECTED[SAMPLE]))]
-    )
-    _, code, out, _ = run(CONTRACTS_DIR / SAMPLE, client)
-
-    assert code == 0
-    assert json.loads(out) == EXPECTED[SAMPLE]
-    assert len(client.requests) == 2
-    roles = [m["role"] for m in client.requests[1]["messages"]]
-    assert roles == ["user", "assistant", "user"]
-    first, bad, fix = client.requests[1]["messages"]
-    assert "<contract>" in first["content"]
-    assert bad["content"] is client.replies_given[0].content
-    assert "failed schema validation" in fix["content"]
-    assert "parties" in fix["content"]
-
-
-def test_stops_after_two_retries(run):
-    client = SequenceClient([text_reply('{"parties": "x"}')] * 3)
-    _, code, out, err = run(CONTRACTS_DIR / SAMPLE, client)
-
-    assert code == 1
-    assert out == ""
-    assert len(client.requests) == 3  # first try + 2 retries
-    assert "after 3 attempts" in err
-    assert "ContractSummary schema" in err
-
-
-def test_tool_mode_request_and_output(run, monkeypatch):
-    client = FakeClient(tool_reply(EXPECTED[SAMPLE]))
-    monkeypatch.setattr(cli.anthropic, "Anthropic", lambda: client)
-    monkeypatch.setattr(
-        sys, "argv", ["extractor", str(CONTRACTS_DIR / SAMPLE), "--mode", "tool"]
-    )
-
-    cli.main()
-
-    (request,) = client.requests
-    (tool,) = request["tools"]
-    assert tool["name"] == cli.TOOL_NAME
-    assert tool["strict"] is True
-    assert tool["input_schema"] == cli.anthropic.transform_schema(cli.ContractSummary)
-    assert request["tool_choice"] == {"type": "auto"}  # a forced tool is a 400
-    assert cli.TOOL_NAME in request["system"]
-    assert "format" not in request["output_config"]
-
-
-def test_tool_mode_text_reply_is_reported(monkeypatch, capsys):
-    client = FakeClient(text_reply("here you go", stop_reason="end_turn"))
-    monkeypatch.setattr(cli.anthropic, "Anthropic", lambda: client)
-    monkeypatch.setattr(
-        sys, "argv", ["extractor", str(CONTRACTS_DIR / SAMPLE), "--mode", "tool"]
-    )
-
-    with pytest.raises(SystemExit):
-        cli.main()
-
-    err = capsys.readouterr().err
-    assert "instead of calling record_summary" in err
-
-
-def test_tool_mode_retry_uses_tool_result(monkeypatch, capsys):
-    bad = {"parties": "not a list"}
-    client = SequenceClient([tool_reply(bad), tool_reply(EXPECTED[SAMPLE], "toolu_2")])
-    monkeypatch.setattr(cli.anthropic, "Anthropic", lambda: client)
-    monkeypatch.setattr(
-        sys, "argv", ["extractor", str(CONTRACTS_DIR / SAMPLE), "--mode", "tool"]
-    )
-
-    cli.main()
-
-    assert json.loads(capsys.readouterr().out) == EXPECTED[SAMPLE]
-    _, assistant, result = client.requests[1]["messages"]
-    assert assistant["content"] is client.replies_given[0].content
-    (block,) = result["content"]
-    assert block["type"] == "tool_result"
-    assert block["tool_use_id"] == "toolu_1"
-    assert block["is_error"] is True
-    assert "parties" in block["content"]
-
-
-def test_retry_keeps_thinking_blocks(monkeypatch, capsys):
-    thinking = SimpleNamespace(type="thinking", thinking="hmm", signature="sig")
-    bad = tool_reply({"parties": "not a list"})
-    bad.content = [thinking, *bad.content]
-    client = SequenceClient([bad, tool_reply(EXPECTED[SAMPLE], "toolu_2")])
-    monkeypatch.setattr(cli.anthropic, "Anthropic", lambda: client)
-    monkeypatch.setattr(
-        sys, "argv", ["extractor", str(CONTRACTS_DIR / SAMPLE), "--mode", "tool"]
-    )
-
-    cli.main()
-
-    _, assistant, result = client.requests[1]["messages"]
-    assert assistant["content"] == [thinking, bad.content[1]]
-    assert [b["tool_use_id"] for b in result["content"]] == ["toolu_1"]
-
-
 def test_compare_counts_retries_and_failures():
-    from contract_extractor.extractor import compare
-
     good = json.dumps(EXPECTED[SAMPLE])
-    client = SequenceClient(
-        [
-            text_reply(good),  # json run 1: clean
-            text_reply("{}"), text_reply(good),  # json run 2: one retry
-            tool_reply({}), tool_reply({}), tool_reply({}),  # tool run 1: fails
-            tool_reply(EXPECTED[SAMPLE]),  # tool run 2: clean
-        ]
+    json_client = FakeClient(
+        text_reply(good),  # run 1: clean
+        text_reply("{}"), text_reply(good),  # run 2: one retry
     )
-    stats = compare.compare(client, [CONTRACTS_DIR / SAMPLE], runs=2)
+    tool_client = FakeClient(
+        tool_reply({}), tool_reply({}), tool_reply({}),  # run 1: fails
+        tool_reply(EXPECTED[SAMPLE]),  # run 2: clean
+    )
+    clients = {"json": json_client, "tool": tool_client}
+
+    stats = compare.compare(
+        lambda mode: providers.ClaudeClient(client=clients[mode], mode=mode),
+        [CONTRACTS_DIR / SAMPLE],
+        runs=2,
+    )
 
     assert stats["json"] == {"runs": 2, "retried": 1, "failed": 0, "errored": 0, "attempts": 3}
     assert stats["tool"] == {"runs": 2, "retried": 1, "failed": 1, "errored": 0, "attempts": 4}
 
 
-def test_compare_keeps_going_after_an_api_error(capsys):
-    from contract_extractor.extractor import compare
-
+def test_compare_keeps_going_after_an_error(capsys):
     good = json.dumps(EXPECTED[SAMPLE])
-
-    class Flaky(SequenceClient):
-        def _create(self, **kwargs):
-            reply = self.replies.pop(0)
-            if isinstance(reply, Exception):
-                raise reply
-            return reply
-
-    client = Flaky(
-        [
-            status_error(anthropic.BadRequestError, 400),  # json run 1 errors
-            text_reply(good),  # json run 2 ok
-            tool_reply(EXPECTED[SAMPLE]),  # tool run 1 ok
-            text_reply("I cannot help", stop_reason="refusal"),  # tool run 2 refused
-        ]
+    clients = {
+        "json": FakeClient(status_error(anthropic.BadRequestError, 400), text_reply(good)),
+        "tool": FakeClient(tool_reply(EXPECTED[SAMPLE]), text_reply("no", stop_reason="refusal")),
+    }
+    stats = compare.compare(
+        lambda mode: providers.ClaudeClient(client=clients[mode], mode=mode),
+        [CONTRACTS_DIR / SAMPLE],
+        runs=2,
     )
-    stats = compare.compare(client, [CONTRACTS_DIR / SAMPLE], runs=2)
 
     assert stats["json"] == {"runs": 2, "retried": 0, "failed": 0, "errored": 1, "attempts": 1}
     assert stats["tool"] == {"runs": 2, "retried": 0, "failed": 0, "errored": 1, "attempts": 1}

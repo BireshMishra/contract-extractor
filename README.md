@@ -58,6 +58,17 @@ forced tool) and the system prompt telling the model to call it. In both
 modes, invalid output is sent back (the bad output plus the validation error) for up to 2
 retries, then the run fails with a clear error.
 
+## Providers
+
+`--provider claude` (default) or `--provider openai` (needs `OPENAI_API_KEY`). Both are
+`LLMClient`s ([providers.py](src/contract_extractor/extractor/providers.py)): one method,
+`complete(system, user)`. The provider-neutral path ([extract.py](src/contract_extractor/extractor/extract.py))
+puts the JSON schema in the system prompt, validates the reply and retries up to twice. Since
+`complete()` takes one user string, a retry resends the request with the bad output and the
+error appended. `--mode text` runs this path on Claude; OpenAI always uses it. Claude's
+`--mode json|tool` stay as the native path (schema-constrained output, strict tool use,
+full reply passed back on retry). The OpenAI path has not been run against the real API.
+
 `python -m contract_extractor.extractor.compare --runs 5 --out evidence/mode_comparison.txt`
 runs every sample through both modes and reports how many runs needed a retry or failed
 outright. It makes real, paid API calls; no results are recorded yet.

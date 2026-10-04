@@ -8,28 +8,23 @@ import anthropic
 from dotenv import load_dotenv
 from pydantic import ValidationError
 
+from .errors import ExtractionError, SchemaError
+from .extract import MAX_RETRIES, extract_text
 from .models import ContractSummary
 from .prompts import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
+from .providers import ClaudeClient, OpenAIClient, translate_anthropic_errors
 
 PACKAGE_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = PACKAGE_DIR.parent.parent
 DEFAULT_CONTRACT = PACKAGE_DIR / "contracts" / "sample1_saas_subscription.txt"
 MODEL = "claude-sonnet-5-5"
-MAX_RETRIES = 2
 MODES = ("json", "tool")
+PROVIDERS = ("claude", "openai")
 TOOL_NAME = "record_summary"
 TOOL_INSTRUCTION = (
     f"Return the result by calling the {TOOL_NAME} tool exactly once. "
     "Do not answer in plain text."
 )
-
-
-class ExtractionError(Exception):
-    """The extraction could not be completed; the message is safe to show the user."""
-
-
-class SchemaError(ExtractionError):
-    """The model kept returning output that does not match ContractSummary."""
 
 
 def fail(message: str) -> NoReturn:
@@ -87,31 +82,13 @@ def request_options(mode: str) -> dict:
 
 
 def send(client, messages: list[dict], mode: str):
-    try:
+    with translate_anthropic_errors():
         return client.messages.create(
             model=MODEL,
             max_tokens=4000,
             messages=messages,
             **request_options(mode),
         )
-    except anthropic.AuthenticationError:
-        raise ExtractionError(
-            "invalid API key (authentication failed); check ANTHROPIC_API_KEY"
-        )
-    except anthropic.PermissionDeniedError:
-        raise ExtractionError("API key does not have permission for this request")
-    except anthropic.RateLimitError:
-        raise ExtractionError("rate limit exceeded; wait a moment and try again")
-    except anthropic.APITimeoutError:
-        raise ExtractionError("request to the Anthropic API timed out")
-    except anthropic.APIConnectionError:
-        raise ExtractionError(
-            "could not connect to the Anthropic API; check your network connection"
-        )
-    except anthropic.APIStatusError as e:
-        raise ExtractionError(f"Anthropic API returned HTTP {e.status_code}: {e.message}")
-    except anthropic.APIError as e:
-        raise ExtractionError(f"Anthropic API error: {e.message}")
 
 
 def parse_reply(response, mode: str) -> ContractSummary:
@@ -206,21 +183,39 @@ def main() -> None:
         help=f"path to the contract text file (default: {DEFAULT_CONTRACT.name})",
     )
     parser.add_argument(
+        "--provider",
+        choices=PROVIDERS,
+        default="claude",
+        help="which LLM to use (default: claude)",
+    )
+    parser.add_argument(
         "--mode",
-        choices=MODES,
-        default="json",
-        help="json: schema-constrained JSON output (default); tool: forced tool call",
+        choices=(*MODES, "text"),
+        help=(
+            "claude only. json: schema-constrained JSON (default); tool: strict tool "
+            "call; text: the provider-neutral prompt-only path that openai always uses"
+        ),
     )
     args = parser.parse_args()
+    if args.provider == "openai" and args.mode not in (None, "text"):
+        parser.error("--mode json/tool needs --provider claude; openai uses text mode")
+    mode = args.mode or ("text" if args.provider == "openai" else "json")
 
     load_dotenv(PROJECT_ROOT / ".env")
     text_content = read_contract(args.contract)
 
-    if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+    if args.provider == "openai":
+        if not os.environ.get("OPENAI_API_KEY"):
+            fail("no API key found; set OPENAI_API_KEY in your environment or .env")
+    elif not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
         fail("no API key found; set ANTHROPIC_API_KEY in your environment or .env")
 
     try:
-        summary, _ = extract(anthropic.Anthropic(), text_content, args.mode, verbose=True)
+        if mode == "text":
+            client = OpenAIClient() if args.provider == "openai" else ClaudeClient()
+            summary, _ = extract_text(client, text_content, verbose=True)
+        else:
+            summary, _ = extract(anthropic.Anthropic(), text_content, mode, verbose=True)
     except ExtractionError as e:
         fail(str(e))
     print(summary.model_dump_json(indent=2))

@@ -37,7 +37,7 @@ def compare(
                 s = stats[mode]
                 s["runs"] += 1
                 try:
-                    _, attempts = extract(client, text)
+                    attempts = extract(client, text).attempts
                 except SchemaError:
                     s["failed"] += 1
                     s["retried"] += 1

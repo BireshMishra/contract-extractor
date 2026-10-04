@@ -57,25 +57,28 @@ def test_strip_code_fence():
 
 def test_extract_passes_the_schema_to_the_client():
     llm = FakeLLM(GOOD)
-    summary, attempts = extract(llm, "THE CONTRACT")
+    result = extract(llm, "THE CONTRACT")
 
-    assert attempts == 1
-    assert summary.model_dump(mode="json") == EXPECTED[SAMPLE]
+    assert result.attempts == 1
+    assert result.summary.model_dump(mode="json") == EXPECTED[SAMPLE]
     ((_, user, schema),) = llm.calls
     assert "governing_law" in schema["properties"]
     assert "<contract>\nTHE CONTRACT\n</contract>" in user
 
 
 def test_extract_accepts_fenced_json():
-    summary, _ = extract(FakeLLM(f"```json\n{GOOD}\n```"), "c")
-    assert summary.parties == EXPECTED[SAMPLE]["parties"]
+    result = extract(FakeLLM(f"```json\n{GOOD}\n```"), "c")
+    assert result.summary.parties == EXPECTED[SAMPLE]["parties"]
 
 
 def test_retry_includes_bad_output_and_error():
     llm = FakeLLM('{"parties": "nope"}', GOOD)
-    _, attempts = extract(llm, "c")
+    result = extract(llm, "c")
 
-    assert attempts == 2
+    assert result.attempts == 2
+    assert result.retries == 1
+    assert (result.input_tokens, result.output_tokens) == (6, 8)  # summed over attempts
+    assert result.seconds >= 0
     retry_user = llm.calls[1][1]
     assert '{"parties": "nope"}' in retry_user
     assert "failed schema validation" in retry_user
@@ -149,3 +152,30 @@ def test_cli_reports_provider_errors_in_one_line(monkeypatch, capsys):
     assert code == 1
     assert out == ""
     assert err == "error: rate limit exceeded; wait a moment and try again\n"
+
+
+def test_cost_is_input_and_output_tokens_times_their_prices():
+    from contract_extractor.extractor.pricing import cost_usd
+
+    # claude-sonnet-5-5: $2 in / $10 out per million tokens
+    assert cost_usd("claude-sonnet-5-5", 1_000_000, 0) == pytest.approx(2.0)
+    assert cost_usd("claude-sonnet-5-5", 0, 1_000_000) == pytest.approx(10.0)
+    assert cost_usd("claude-sonnet-5-5", 3000, 500) == pytest.approx(0.006 + 0.005)
+
+
+def test_benchmark_row_and_table():
+    from contract_extractor.extractor import benchmark
+
+    partial = json.dumps({**EXPECTED[SAMPLE], "liability_cap": None})
+    row = benchmark.run_one(FakeLLM(partial), "claude", "claude-sonnet-5-5", CONTRACTS_DIR / SAMPLE)
+    failed = benchmark.run_one(
+        FakeLLM("{}", "{}", "{}"), "openai", "gpt-4.1", CONTRACTS_DIR / SAMPLE
+    )
+
+    assert row.null_fields == ["liability_cap"]
+    assert row.retries == 0
+    assert row.cost == pytest.approx((3 * 2 + 4 * 10) / 1_000_000)
+    assert failed.error and "schema" in failed.error
+    table = benchmark.format_table([row, failed])
+    assert "| liability_cap |" in table
+    assert "FAILED" in table

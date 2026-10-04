@@ -83,10 +83,10 @@ def main() -> None:
     else:
         client = ClaudeClient(mode=args.mode or "json")
     try:
-        summary, _ = extract(client, text_content, verbose=True)
+        result = extract(client, text_content, verbose=True)
     except ExtractionError as e:
         fail(str(e))
-    print(summary.model_dump_json(indent=2))
+    print(result.summary.model_dump_json(indent=2))
 
 
 if __name__ == "__main__":
